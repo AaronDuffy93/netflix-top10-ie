@@ -1,0 +1,10 @@
+{
+  "name": "netflix-top10-ie",
+  "version": "1.0.0",
+  "private": true,
+  "main": "server.js",
+  "dependencies": {
+    "express": "^4.21.2",
+    "stremio-addon-sdk": "^1.6.10"
+  }
+}
