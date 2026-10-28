@@ -21,7 +21,7 @@ const OVERRIDES = {
 
 const manifest = {
   id: 'local.netflixtop10ie',
-  version: '1.0.0',
+  version: '1.0.1',
   name: `Netflix Top 10 ${COUNTRY_NAME}`,
   description: `Netflix's official weekly Top 10 for ${COUNTRY_NAME}`,
   types: ['movie', 'series'],
@@ -122,7 +122,7 @@ builder.defineCatalogHandler(async ({ type, id }) => {
     metas.push({
       id: m.id,
       type: metaType,
-      name: m.name || e.title,
+      name: `#${e.rank} ${m.name || e.title}`,   // e.g. "#1 Old Dads" under the poster
       poster: m.poster,
       background: m.background,
       logo: m.logo,
