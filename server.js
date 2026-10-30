@@ -6,14 +6,28 @@ const addonInterface = require('./addon');
 
 const app = express();
 
-// Quick health check: open /status in a browser to see which week is loaded
+// Open /status in a browser to see which source and chart are loaded
 app.get('/status', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
   try {
-    const c = await addonInterface.chartStatus();
-    res.json(c);
+    res.json(await addonInterface.chartStatus());
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// Let Vercel's cache keep each row until the next refresh time, so FlixPatrol
+// is only read about twice a day instead of every time Stremio asks.
+app.use('/catalog', (req, res, next) => {
+  const setHeader = res.setHeader.bind(res);
+  res.setHeader = (name, value) => {
+    if (String(name).toLowerCase() === 'cache-control') {
+      const m = /max-age=(\d+)/.exec(String(value));
+      if (m) value = `${value}, s-maxage=${m[1]}`;
+    }
+    return setHeader(name, value);
+  };
+  next();
 });
 
 app.use(getRouter(addonInterface));
