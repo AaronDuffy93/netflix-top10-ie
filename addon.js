@@ -19,6 +19,8 @@ const WEEKLY_URLS = [                       // Netflix's official weekly data, t
   'https://top10.netflix.com/data/all-weeks-countries.tsv',
 ];
 const CINEMETA = 'https://v3-cinemeta.strem.io';
+const STREMIO_CACHE_SECONDS = 15 * 60;      // Stremio re-checks the rows every 15 minutes
+const FALLBACK_RETRY_MS = 30 * 60 * 1000;   // if on the weekly fallback, retry FlixPatrol every 30 minutes
 const BROWSER_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36',
   'Accept': 'text/html,application/xhtml+xml',
@@ -32,7 +34,7 @@ const OVERRIDES = {
 
 const manifest = {
   id: 'local.netflixtop10ie',
-  version: '1.1.0',
+  version: '1.1.1',
   name: `Netflix Top 10 ${COUNTRY_NAME}`,
   description: `Netflix Top 10 for ${COUNTRY_NAME} – daily from FlixPatrol, with Netflix's official weekly chart as a fallback`,
   types: ['movie', 'series'],
@@ -195,17 +197,20 @@ async function fetchWeekly() {
 
 // ---------- Chart cache ----------
 
-let chart = null;   // { slotStart, source, label, url, films, tv, fallbackReason? }
+let chart = null;   // { slotStart, fetchedAt, source, label, url, films, tv, fallbackReason? }
+
+const isFresh = c => c && c.slotStart === currentSlot().start
+  && (c.source === 'flixpatrol' || Date.now() - c.fetchedAt < FALLBACK_RETRY_MS);
 
 async function getChart() {
-  const { start } = currentSlot();
-  if (chart && chart.slotStart === start) return chart;
+  if (isFresh(chart)) return chart;
+  const start = currentSlot().start;
   try {
-    chart = { slotStart: start, ...(await fetchFlixPatrol()) };
+    chart = { slotStart: start, fetchedAt: Date.now(), ...(await fetchFlixPatrol()) };
   } catch (e) {
     console.error(e.message);
     try {
-      chart = { slotStart: start, ...(await fetchWeekly()), fallbackReason: e.message };
+      chart = { slotStart: start, fetchedAt: Date.now(), ...(await fetchWeekly()), fallbackReason: e.message };
     } catch (e2) {
       console.error('Weekly fallback failed:', e2.message);
       if (!chart) throw e2;                 // keep serving the last good chart if we have one
@@ -264,9 +269,7 @@ builder.defineCatalogHandler(async ({ id }) => {
       description: `#${e.rank} in ${COUNTRY_NAME} – ${c.label}${e.note ? ' · ' + e.note : ''}`,
     });
   }
-  // Let Stremio (and Vercel's cache, see server.js) reuse this until the next refresh time
-  const secondsToNext = Math.max(300, Math.round((currentSlot().next - Date.now()) / 1000));
-  return { metas, cacheMaxAge: secondsToNext, staleError: 24 * 60 * 60 };
+  return { metas, cacheMaxAge: STREMIO_CACHE_SECONDS, staleError: 24 * 60 * 60 };
 });
 
 const addonInterface = builder.getInterface();
@@ -283,6 +286,14 @@ addonInterface.chartStatus = async () => {
     films: c.films.map(r => `#${r.rank} ${r.title}`),
     tv: c.tv.map(r => `#${r.rank} ${r.title}`),
   };
+};
+
+// How long Vercel's cache may keep a row (see server.js):
+// until the next refresh time for the daily chart, 30 minutes while on the weekly fallback
+addonInterface.cdnSeconds = () => {
+  const toNext = Math.round((currentSlot().next - Date.now()) / 1000);
+  const limit = chart && chart.source === 'flixpatrol' ? toNext : FALLBACK_RETRY_MS / 1000;
+  return Math.max(60, Math.min(toNext, limit));
 };
 
 // Exposed for testing

@@ -17,13 +17,13 @@ app.get('/status', async (req, res) => {
 });
 
 // Let Vercel's cache keep each row until the next refresh time, so FlixPatrol
-// is only read about twice a day instead of every time Stremio asks.
+// is only read about twice a day however often Stremio asks. (A new deployment
+// on Vercel clears this cache straight away.)
 app.use('/catalog', (req, res, next) => {
   const setHeader = res.setHeader.bind(res);
   res.setHeader = (name, value) => {
-    if (String(name).toLowerCase() === 'cache-control') {
-      const m = /max-age=(\d+)/.exec(String(value));
-      if (m) value = `${value}, s-maxage=${m[1]}`;
+    if (String(name).toLowerCase() === 'cache-control' && /max-age=/.test(String(value))) {
+      value = `${value}, s-maxage=${addonInterface.cdnSeconds()}`;
     }
     return setHeader(name, value);
   };
